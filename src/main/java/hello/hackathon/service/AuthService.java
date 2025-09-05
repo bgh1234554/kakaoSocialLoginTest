@@ -42,6 +42,7 @@ public class AuthService {
     private final TokenService tokenService;
     private final JwtConfig jwtConfig;
 
+    // 카카오 사용자 정보 조회 API 엔드포인트
     @Value("${kakao.userinfo-uri}")
     private String kakaoUserinfoUri;
 
@@ -161,7 +162,7 @@ public class AuthService {
         rt.rotate(Instant.now());
         refreshTokens.save(rt);
 
-        String newAcessToken =  tokenService.createAccess(userEntity.getId(), userEntity.getEmail(), userEntity.getNickname());
+        String newAccessToken =  tokenService.createAccess(userEntity.getId(), userEntity.getEmail(), userEntity.getNickname());
         String newRefreshToken = tokenService.createRefresh(userEntity.getId());
         refreshTokens.save(RefreshToken.builder()
                 .userEntity(userEntity)
@@ -170,7 +171,7 @@ public class AuthService {
                 .expiresAt(Instant.now().plusSeconds(jwtConfig.getRefreshTtlSeconds()))
                 .build());
         return Map.of(
-                "accessToken",newAcessToken,
+                "accessToken",newAccessToken,
                 "refreshToken",newRefreshToken,
                 "accessTtlSec",jwtConfig.getAccessTtlSeconds(),
                 "refreshTtlSec",jwtConfig.getRefreshTtlSeconds()
@@ -188,18 +189,19 @@ public class AuthService {
     //액세스 토큰을 기반으로 유저 정보를 뽑아내는 토큰
     private KakaoProfileDto fetchKakaoProfile(String kakaoAccessToken) {
        JsonNode n = webClientBuilder.build()
-               .get().uri(kakaoUserinfoUri)
-               .headers(h -> h.setBearerAuth(kakaoAccessToken))
-               .accept(MediaType.APPLICATION_JSON)
-               .retrieve()
-               .onStatus(HttpStatusCode::isError, resp ->
+               .get().uri(kakaoUserinfoUri) // HTTP GET 요청 설정, 요청 URL 설정
+               .headers(h -> h.setBearerAuth(kakaoAccessToken)) // Bearer 토큰 인증 헤더 설정
+               .accept(MediaType.APPLICATION_JSON) // Accept 헤더를 application/json으로 설정
+               .retrieve() // 응답 받기 시작
+               .onStatus(HttpStatusCode::isError, resp -> // 에러 상태 코드(4xx, 5xx) 처리
                        resp.bodyToMono(String.class)
                                .defaultIfEmpty("")
                                .flatMap(body -> Mono.error(new ResponseStatusException(
                                        resp.statusCode(), "kakao userinfo error: " + body))))
-               .bodyToMono(JsonNode.class)
-               .block(); // 동기 흐름 유지
+               .bodyToMono(JsonNode.class) // 응답 본문을 JsonNode로 변환
+               .block(); // 비동기 결과를 동기적으로 기다림
        KakaoProfileDto dto = new KakaoProfileDto();
+       //자세한 사항은 예제 참조 - https://developers.kakao.com/docs/latest/ko/kakaologin/rest-api#req-user-info-sample
        dto.setId(n.path("id").asText(null));
        dto.setEmail(n.at("/kakao_account/email").asText(null));
        dto.setNickname(n.at("/kakao_account/profile/nickname").asText(null));
